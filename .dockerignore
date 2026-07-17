@@ -1,0 +1,11 @@
+.env
+.git
+.next
+.venv
+__pycache__
+*.py[cod]
+backend/.venv
+frontend/node_modules
+frontend/.next
+frontend/out
+test-results
