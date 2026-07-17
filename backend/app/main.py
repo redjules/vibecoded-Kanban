@@ -5,10 +5,13 @@ import json
 import os
 import time
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app import database
 
 STATIC_DIR = Path(__file__).parent / "static"
 SESSION_COOKIE = "pm_session"
@@ -19,6 +22,29 @@ SESSION_SECRET = os.environ.get("SESSION_SECRET", "local-development-session-sec
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+class ColumnRenameRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+
+
+class CardCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    details: str = Field(default="", max_length=10_000)
+
+
+class CardUpdateRequest(CardCreateRequest):
+    pass
+
+
+class CardMoveRequest(BaseModel):
+    column_id: int
+    position: int = Field(ge=0)
+
+
+class MessageCreateRequest(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=10_000)
 
 
 def _encode_session(username: str) -> str:
@@ -56,6 +82,12 @@ def _session_username(request: Request) -> str | None:
     return "user"
 
 app = FastAPI(title="Project Management MVP API")
+app.state.database_path = Path(os.environ.get("DATABASE_PATH", database.DEFAULT_DATABASE_PATH))
+
+
+@app.on_event("startup")
+def initialize_database() -> None:
+    database.initialize(app.state.database_path)
 
 
 @app.middleware("http")
@@ -102,6 +134,96 @@ def read_session(request: Request) -> dict[str, str]:
     if username is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return {"username": username}
+
+
+def authenticated_username(request: Request) -> str:
+    username = _session_username(request)
+    if username is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return username
+
+
+def translate_database_error(operation) -> dict:
+    try:
+        return operation()
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.get("/api/board")
+def read_board(request: Request) -> dict:
+    username = authenticated_username(request)
+    return translate_database_error(
+        lambda: database.board_for_user(app.state.database_path, username)
+    )
+
+
+@app.patch("/api/columns/{column_id}")
+def rename_board_column(column_id: int, payload: ColumnRenameRequest, request: Request) -> dict:
+    username = authenticated_username(request)
+    return translate_database_error(
+        lambda: database.rename_column(
+            app.state.database_path, username, column_id, payload.title
+        )
+    )
+
+
+@app.post("/api/columns/{column_id}/cards", status_code=201)
+def create_board_card(column_id: int, payload: CardCreateRequest, request: Request) -> dict:
+    username = authenticated_username(request)
+    return translate_database_error(
+        lambda: database.create_card(
+            app.state.database_path, username, column_id, payload.title, payload.details
+        )
+    )
+
+
+@app.patch("/api/cards/{card_id}")
+def update_board_card(card_id: int, payload: CardUpdateRequest, request: Request) -> dict:
+    username = authenticated_username(request)
+    return translate_database_error(
+        lambda: database.update_card(
+            app.state.database_path, username, card_id, payload.title, payload.details
+        )
+    )
+
+
+@app.delete("/api/cards/{card_id}")
+def delete_board_card(card_id: int, request: Request) -> dict:
+    username = authenticated_username(request)
+    return translate_database_error(
+        lambda: database.delete_card(app.state.database_path, username, card_id)
+    )
+
+
+@app.post("/api/cards/{card_id}/move")
+def move_board_card(card_id: int, payload: CardMoveRequest, request: Request) -> dict:
+    username = authenticated_username(request)
+    return translate_database_error(
+        lambda: database.move_card(
+            app.state.database_path,
+            username,
+            card_id,
+            payload.column_id,
+            payload.position,
+        )
+    )
+
+
+@app.get("/api/messages")
+def read_messages(request: Request) -> list[dict]:
+    username = authenticated_username(request)
+    return database.messages_for_user(app.state.database_path, username)
+
+
+@app.post("/api/messages", status_code=201)
+def create_conversation_message(payload: MessageCreateRequest, request: Request) -> list[dict]:
+    username = authenticated_username(request)
+    return database.create_message(
+        app.state.database_path, username, payload.role, payload.content
+    )
 
 
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

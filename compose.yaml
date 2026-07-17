@@ -8,3 +8,8 @@ services:
         required: false
     ports:
       - "8000:8000"
+    volumes:
+      - project-management-data:/data
+
+volumes:
+  project-management-data:

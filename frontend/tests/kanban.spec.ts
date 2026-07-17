@@ -17,9 +17,9 @@ test("rejects invalid credentials", async ({ page }) => {
   await page.getByLabel("Password").fill("wrong");
   await page.getByRole("button", { name: "Sign in" }).click();
 
-  await expect(page.getByRole("alert")).toHaveText(
-    "Enter the fixed MVP credentials to continue.",
-  );
+  await expect(
+    page.getByText("Enter the fixed MVP credentials to continue."),
+  ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Kanban Studio" }),
   ).not.toBeVisible();

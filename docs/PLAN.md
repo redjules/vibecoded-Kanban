@@ -60,12 +60,12 @@
 
 **Goal:** require the fixed MVP credentials before exposing the board and support logout.
 
-- [ ] Define the minimal session approach (recommended: signed, HTTP-only cookie) and document its lifetime and local-only limits.
-- [ ] Add `POST /api/auth/login`, `POST /api/auth/logout`, and `GET /api/auth/session`.
-- [ ] Authenticate only `user` / `password`; return an appropriate failure response for invalid credentials.
-- [ ] Protect board and AI API routes; serve the login experience when no valid session exists.
-- [ ] Add a login form and logout control consistent with the existing visual system.
-- [ ] Test valid login, rejected login, protected-route rejection, session restoration, and logout.
+- [x] Define the minimal session approach (recommended: signed, HTTP-only cookie) and document its lifetime and local-only limits.
+- [x] Add `POST /api/auth/login`, `POST /api/auth/logout`, and `GET /api/auth/session`.
+- [x] Authenticate only `user` / `password`; return an appropriate failure response for invalid credentials.
+- [x] Protect board and AI API routes; serve the login experience when no valid session exists.
+- [x] Add a login form and logout control consistent with the existing visual system.
+- [x] Test valid login, rejected login, protected-route rejection, session restoration, and logout.
 
 **Validation:** backend auth tests; frontend unit tests; Playwright login/logout flows; container smoke test with and without session cookie.
 
@@ -75,13 +75,13 @@
 
 **Goal:** agree the SQLite data model before writing database code.
 
-- [ ] Write `docs/database-schema.json` as documentation describing tables, columns, types, keys, and indexes; store board data in normal SQLite tables, not a JSON blob.
-- [ ] Write a concise `docs/database.md` explaining ownership, ordering, initialization, and the relationship between the JSON schema document and SQLite DDL.
-- [ ] Model users, one board per user, fixed-position columns, cards, card ordering within a column, and persisted AI conversation messages.
-- [ ] Define deletion/update behavior and order-maintenance rules for moving cards.
-- [ ] Seed the fixed MVP user with the current frontend demo board data.
-- [ ] Model card `title` and `details` as the only MVP fields while leaving the schema easy to extend with status, priority, timestamps, and tags.
-- [ ] Review the schema with the user and obtain explicit approval.
+- [x] Write `docs/database-schema.json` as documentation describing tables, columns, types, keys, and indexes; store board data in normal SQLite tables, not a JSON blob.
+- [x] Write a concise `docs/database.md` explaining ownership, ordering, initialization, and the relationship between the JSON schema document and SQLite DDL.
+- [x] Model users, one board per user, fixed-position columns, cards, card ordering within a column, and persisted AI conversation messages.
+- [x] Define deletion/update behavior and order-maintenance rules for moving cards.
+- [x] Seed the fixed MVP user with the current frontend demo board data.
+- [x] Model card `title` and `details` as the only MVP fields while leaving the schema easy to extend with status, priority, timestamps, and tags.
+- [x] Review the schema with the user and obtain explicit approval.
 
 **Validation:** JSON parses successfully; schema review.
 
@@ -91,14 +91,14 @@
 
 **Goal:** implement database initialization and authenticated APIs for the agreed board model.
 
-- [ ] Add SQLite connection, schema initialization, and seed logic that runs safely when the database file is absent.
-- [ ] Persist and retrieve the authenticated user's conversation messages.
-- [ ] Implement authenticated board read endpoint(s) scoped to the session user.
-- [ ] Implement validated mutations for column rename, card create/edit/delete, and card reorder/move.
-- [ ] Keep a card move and its resulting order updates atomic.
-- [ ] Return response shapes that let the frontend replace its canonical board state after each successful mutation.
-- [ ] Add service and API tests using an isolated temporary SQLite database.
-- [ ] Test authorization boundaries even though the MVP login exposes one account.
+- [x] Add SQLite connection, schema initialization, and seed logic that runs safely when the database file is absent.
+- [x] Persist and retrieve the authenticated user's conversation messages.
+- [x] Implement authenticated board read endpoint(s) scoped to the session user.
+- [x] Implement validated mutations for column rename, card create/edit/delete, and card reorder/move.
+- [x] Keep a card move and its resulting order updates atomic.
+- [x] Return response shapes that let the frontend replace its canonical board state after each successful mutation.
+- [x] Add service and API tests using an isolated temporary SQLite database.
+- [x] Test authorization boundaries even though the MVP login exposes one account.
 
 **Validation:** focused backend tests covering initialization, seeding, all mutations, ordering, validation, and unauthorized responses.
 

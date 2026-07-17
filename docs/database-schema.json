@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Project Management MVP SQLite Schema",
+  "description": "Documentation for the relational SQLite database to be implemented after Phase 5 approval.",
+  "database": {
+    "engine": "SQLite",
+    "foreignKeys": true,
+    "tables": [
+      {
+        "name": "users",
+        "purpose": "Owns the single MVP board and its conversation history.",
+        "columns": [
+          { "name": "id", "type": "INTEGER", "constraints": ["PRIMARY KEY"] },
+          {
+            "name": "username",
+            "type": "TEXT",
+            "constraints": ["NOT NULL", "UNIQUE"]
+          }
+        ]
+      },
+      {
+        "name": "boards",
+        "purpose": "The one board assigned to each user in this MVP.",
+        "columns": [
+          { "name": "id", "type": "INTEGER", "constraints": ["PRIMARY KEY"] },
+          {
+            "name": "user_id",
+            "type": "INTEGER",
+            "constraints": [
+              "NOT NULL",
+              "UNIQUE",
+              "REFERENCES users(id) ON DELETE CASCADE"
+            ]
+          },
+          { "name": "title", "type": "TEXT", "constraints": ["NOT NULL"] }
+        ]
+      },
+      {
+        "name": "columns",
+        "purpose": "Fixed board columns whose titles can be renamed.",
+        "columns": [
+          { "name": "id", "type": "INTEGER", "constraints": ["PRIMARY KEY"] },
+          {
+            "name": "board_id",
+            "type": "INTEGER",
+            "constraints": [
+              "NOT NULL",
+              "REFERENCES boards(id) ON DELETE CASCADE"
+            ]
+          },
+          { "name": "title", "type": "TEXT", "constraints": ["NOT NULL"] },
+          {
+            "name": "position",
+            "type": "INTEGER",
+            "constraints": ["NOT NULL", "CHECK (position >= 0)"]
+          }
+        ],
+        "indexes": [{ "columns": ["board_id", "position"], "unique": true }]
+      },
+      {
+        "name": "cards",
+        "purpose": "MVP work cards. Future fields such as status, priority, timestamps, and tags can be added without changing board ownership or ordering.",
+        "columns": [
+          { "name": "id", "type": "INTEGER", "constraints": ["PRIMARY KEY"] },
+          {
+            "name": "column_id",
+            "type": "INTEGER",
+            "constraints": [
+              "NOT NULL",
+              "REFERENCES columns(id) ON DELETE CASCADE"
+            ]
+          },
+          { "name": "title", "type": "TEXT", "constraints": ["NOT NULL"] },
+          { "name": "details", "type": "TEXT", "constraints": ["NOT NULL"] },
+          {
+            "name": "position",
+            "type": "INTEGER",
+            "constraints": ["NOT NULL", "CHECK (position >= 0)"]
+          }
+        ],
+        "indexes": [{ "columns": ["column_id", "position"], "unique": true }]
+      },
+      {
+        "name": "conversation_messages",
+        "purpose": "Persists the authenticated user's AI conversation across page reloads and browser restarts.",
+        "columns": [
+          { "name": "id", "type": "INTEGER", "constraints": ["PRIMARY KEY"] },
+          {
+            "name": "user_id",
+            "type": "INTEGER",
+            "constraints": [
+              "NOT NULL",
+              "REFERENCES users(id) ON DELETE CASCADE"
+            ]
+          },
+          {
+            "name": "role",
+            "type": "TEXT",
+            "constraints": ["NOT NULL", "CHECK (role IN ('user', 'assistant'))"]
+          },
+          { "name": "content", "type": "TEXT", "constraints": ["NOT NULL"] },
+          {
+            "name": "position",
+            "type": "INTEGER",
+            "constraints": ["NOT NULL", "CHECK (position >= 0)"]
+          }
+        ],
+        "indexes": [{ "columns": ["user_id", "position"], "unique": true }]
+      }
+    ]
+  }
+}
