@@ -11,7 +11,9 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from app.ai import build_provider_prompt, parse_model_result
 from app import database
+from app.openrouter import OpenRouterClient, OpenRouterError
 
 STATIC_DIR = Path(__file__).parent / "static"
 SESSION_COOKIE = "pm_session"
@@ -44,6 +46,10 @@ class CardMoveRequest(BaseModel):
 
 class MessageCreateRequest(BaseModel):
     role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=10_000)
+
+
+class AiMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=10_000)
 
 
@@ -224,6 +230,45 @@ def create_conversation_message(payload: MessageCreateRequest, request: Request)
     return database.create_message(
         app.state.database_path, username, payload.role, payload.content
     )
+
+
+@app.post("/api/ai/messages")
+def create_ai_message(payload: AiMessageRequest, request: Request) -> dict:
+    username = authenticated_username(request)
+    board = database.board_for_user(app.state.database_path, username)
+    history = database.messages_for_user(app.state.database_path, username)[-10:]
+    prompt = build_provider_prompt(board, history, payload.content)
+    try:
+        model_content = OpenRouterClient().complete(prompt)
+    except OpenRouterError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    try:
+        model_result = parse_model_result(model_content)
+        messages, next_board = database.apply_ai_result(
+            app.state.database_path,
+            username,
+            payload.content,
+            model_result.reply,
+            model_result.operations,
+        )
+    except (LookupError, ValueError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return {
+        "reply": model_result.reply,
+        "messages": messages,
+        "board": next_board,
+        "operationsApplied": len(model_result.operations),
+    }
+
+
+@app.post("/api/ai/connectivity-check")
+def check_ai_connectivity(request: Request) -> dict[str, str]:
+    authenticated_username(request)
+    try:
+        response = OpenRouterClient().complete("What is 2 + 2? Reply with only the number.")
+    except OpenRouterError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    return {"response": response}
 
 
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

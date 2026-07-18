@@ -1,27 +1,30 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DndContext,
   DragOverlay,
   PointerSensor,
   useSensor,
   useSensors,
-  closestCorners,
+  pointerWithin,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { AiChat } from "@/components/AiChat";
 import { KanbanColumn } from "@/components/KanbanColumn";
 import { KanbanCardPreview } from "@/components/KanbanCardPreview";
-import { createId, initialData, moveCard, type BoardData } from "@/lib/kanban";
+import { moveCard, type BoardData } from "@/lib/kanban";
 
 type KanbanBoardProps = {
   onLogout?: () => void;
 };
 
 export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
-  const [board, setBoard] = useState<BoardData>(() => initialData);
+  const [board, setBoard] = useState<BoardData | null>(null);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [isMutating, setIsMutating] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -29,7 +32,49 @@ export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
     }),
   );
 
-  const cardsById = useMemo(() => board.cards, [board.cards]);
+  const cardsById = useMemo(() => board?.cards ?? {}, [board]);
+
+  const requestBoard = async (path: string, options?: RequestInit) => {
+    setError("");
+    const response = await fetch(path, { credentials: "include", ...options });
+    if (!response.ok) {
+      throw new Error("The board could not be updated. Try again.");
+    }
+    const nextBoard = (await response.json()) as BoardData;
+    setBoard(nextBoard);
+  };
+
+  useEffect(() => {
+    const loadBoard = async () => {
+      try {
+        await requestBoard("/api/board");
+      } catch {
+        setError("The board could not be loaded. Refresh and try again.");
+      }
+    };
+
+    void loadBoard();
+  }, []);
+
+  const runMutation = async (operation: () => Promise<void>) => {
+    if (isMutating) {
+      return false;
+    }
+    setIsMutating(true);
+    try {
+      await operation();
+      return true;
+    } catch (mutationError) {
+      setError(
+        mutationError instanceof Error
+          ? mutationError.message
+          : "The board could not be updated. Try again.",
+      );
+    } finally {
+      setIsMutating(false);
+    }
+    return false;
+  };
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveCardId(event.active.id as string);
@@ -39,61 +84,73 @@ export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
     const { active, over } = event;
     setActiveCardId(null);
 
-    if (!over || active.id === over.id) {
+    if (!board || !over || active.id === over.id) {
       return;
     }
 
-    setBoard((prev) => ({
-      ...prev,
-      columns: moveCard(prev.columns, active.id as string, over.id as string),
-    }));
+    const nextColumns = moveCard(
+      board.columns,
+      active.id as string,
+      over.id as string,
+    );
+    const targetColumn = nextColumns.find((column) =>
+      column.cardIds.includes(active.id as string),
+    );
+    if (!targetColumn) {
+      return;
+    }
+
+    void runMutation(() =>
+      requestBoard(`/api/cards/${active.id}/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          column_id: Number(targetColumn.id),
+          position: targetColumn.cardIds.indexOf(active.id as string),
+        }),
+      }),
+    );
   };
 
   const handleRenameColumn = (columnId: string, title: string) => {
-    setBoard((prev) => ({
-      ...prev,
-      columns: prev.columns.map((column) =>
-        column.id === columnId ? { ...column, title } : column,
-      ),
-    }));
+    void runMutation(() =>
+      requestBoard(`/api/columns/${columnId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      }),
+    );
   };
 
-  const handleAddCard = (columnId: string, title: string, details: string) => {
-    const id = createId("card");
-    setBoard((prev) => ({
-      ...prev,
-      cards: {
-        ...prev.cards,
-        [id]: { id, title, details: details || "No details yet." },
-      },
-      columns: prev.columns.map((column) =>
-        column.id === columnId
-          ? { ...column, cardIds: [...column.cardIds, id] }
-          : column,
-      ),
-    }));
+  const handleAddCard = async (
+    columnId: string,
+    title: string,
+    details: string,
+  ) => {
+    return runMutation(() =>
+      requestBoard(`/api/columns/${columnId}/cards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, details }),
+      }),
+    );
   };
 
-  const handleDeleteCard = (columnId: string, cardId: string) => {
-    setBoard((prev) => {
-      return {
-        ...prev,
-        cards: Object.fromEntries(
-          Object.entries(prev.cards).filter(([id]) => id !== cardId),
-        ),
-        columns: prev.columns.map((column) =>
-          column.id === columnId
-            ? {
-                ...column,
-                cardIds: column.cardIds.filter((id) => id !== cardId),
-              }
-            : column,
-        ),
-      };
-    });
+  const handleDeleteCard = async (cardId: string) => {
+    await runMutation(() =>
+      requestBoard(`/api/cards/${cardId}`, { method: "DELETE" }),
+    );
   };
 
   const activeCard = activeCardId ? cardsById[activeCardId] : null;
+
+  if (!board) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[var(--surface)] px-6 text-sm font-semibold text-[var(--gray-text)]">
+        {error || "Loading board..."}
+      </main>
+    );
+  }
 
   return (
     <div className="relative overflow-hidden">
@@ -147,32 +204,42 @@ export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
           </div>
         </header>
 
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCorners}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        >
-          <section className="grid gap-6 lg:grid-cols-5">
-            {board.columns.map((column) => (
-              <KanbanColumn
-                key={column.id}
-                column={column}
-                cards={column.cardIds.map((cardId) => board.cards[cardId])}
-                onRename={handleRenameColumn}
-                onAddCard={handleAddCard}
-                onDeleteCard={handleDeleteCard}
-              />
-            ))}
-          </section>
-          <DragOverlay>
-            {activeCard ? (
-              <div className="w-[260px]">
-                <KanbanCardPreview card={activeCard} />
-              </div>
-            ) : null}
-          </DragOverlay>
-        </DndContext>
+        {error ? (
+          <p className="text-sm font-semibold text-red-700" role="alert">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <DndContext
+            sensors={sensors}
+            collisionDetection={pointerWithin}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <section className="grid min-w-0 gap-6 lg:grid-cols-5">
+              {board.columns.map((column) => (
+                <KanbanColumn
+                  key={column.id}
+                  column={column}
+                  cards={column.cardIds.map((cardId) => board.cards[cardId])}
+                  onRename={handleRenameColumn}
+                  onAddCard={handleAddCard}
+                  onDeleteCard={handleDeleteCard}
+                  isMutating={isMutating}
+                />
+              ))}
+            </section>
+            <DragOverlay>
+              {activeCard ? (
+                <div className="w-[260px]">
+                  <KanbanCardPreview card={activeCard} />
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+          <AiChat onBoardUpdate={setBoard} />
+        </div>
       </main>
     </div>
   );

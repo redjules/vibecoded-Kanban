@@ -108,12 +108,12 @@
 
 **Goal:** make the board use the persistent API rather than local demo state.
 
-- [ ] Replace initial in-memory board loading with authenticated API loading, retaining the existing client-side interaction model where appropriate.
-- [ ] Send every approved UI mutation to the API and reconcile the returned canonical board state.
-- [ ] Add explicit loading, empty/error, and mutation-failure states that keep the board usable and understandable.
-- [ ] Prevent duplicate mutation submission while a specific request is pending.
-- [ ] Update unit tests for API-backed state transitions.
-- [ ] Add browser tests that exercise persistence through the running FastAPI app and verify data survives reload.
+- [x] Replace initial in-memory board loading with authenticated API loading, retaining the existing client-side interaction model where appropriate.
+- [x] Send every approved UI mutation to the API and reconcile the returned canonical board state.
+- [x] Add explicit loading, empty/error, and mutation-failure states that keep the board usable and understandable.
+- [x] Prevent duplicate mutation submission while a specific request is pending.
+- [x] Update unit tests for API-backed state transitions.
+- [x] Add browser tests that exercise persistence through the running FastAPI app and verify data survives reload.
 
 **Validation:** frontend lint/unit/build; backend tests; end-to-end tests against the integrated container.
 
@@ -123,10 +123,10 @@
 
 **Goal:** add a backend-only OpenRouter client and verify configuration with a bounded smoke test.
 
-- [ ] Add configuration loading that requires `OPENROUTER_API_KEY` only for AI routes and never sends it to the browser.
-- [ ] Implement a small provider client using `openai/gpt-oss-120b` and configured timeouts.
-- [ ] Add a backend-only diagnostic or test seam for a simple `2 + 2` request; do not expose a general diagnostic endpoint in the UI.
-- [ ] Mock the provider in automated tests for request construction, errors, and timeouts.
+- [x] Add configuration loading that requires `OPENROUTER_API_KEY` only for AI routes and never sends it to the browser.
+- [x] Implement a small provider client using `openai/gpt-oss-120b` and configured timeouts.
+- [x] Add a backend-only diagnostic or test seam for a simple `2 + 2` request; do not expose a general diagnostic endpoint in the UI.
+- [x] Mock the provider in automated tests for request construction, errors, and timeouts.
 - [ ] With user approval and a locally configured key, perform one manual connectivity check and record only the pass/fail result.
 
 **Validation:** mocked provider tests; optional approved manual OpenRouter smoke test.
@@ -137,13 +137,13 @@
 
 **Goal:** let the model respond to a user message with typed chat content and optional validated board operations.
 
-- [ ] Define a JSON schema for the model result: assistant reply plus zero or more board operations.
-- [ ] Define supported operations precisely: create card, edit card, delete card, move/reorder card, and rename column.
-- [ ] Include the current user's board JSON, the user message, and bounded conversation history in the provider request.
-- [ ] Validate every returned operation on the server against the current database state and session user before applying it.
-- [ ] Apply all accepted operations atomically; reject invalid model output without partial board changes.
-- [ ] Persist conversation history in SQLite and include the bounded stored history in the provider request.
-- [ ] Add tests for reply-only output, each operation type, multiple operations, invalid structured output, and provider errors.
+- [x] Define a JSON schema for the model result: assistant reply plus zero or more board operations.
+- [x] Define supported operations precisely: create card, edit card, delete card, move/reorder card, and rename column.
+- [x] Include the current user's board JSON, the user message, and bounded conversation history in the provider request.
+- [x] Validate every returned operation on the server against the current database state and session user before applying it.
+- [x] Apply all accepted operations atomically; reject invalid model output without partial board changes.
+- [x] Persist conversation history in SQLite and include the bounded stored history in the provider request.
+- [x] Add tests for reply-only output, each operation type, multiple operations, invalid structured output, and provider errors.
 
 **Validation:** schema validation tests; mocked model-response API tests; SQLite atomicity tests.
 
