@@ -4,6 +4,7 @@ import hmac
 import json
 import os
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
@@ -87,13 +88,18 @@ def _session_username(request: Request) -> str | None:
         return None
     return "user"
 
-app = FastAPI(title="Project Management MVP API")
-app.state.database_path = Path(os.environ.get("DATABASE_PATH", database.DEFAULT_DATABASE_PATH))
-
-
-@app.on_event("startup")
-def initialize_database() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     database.initialize(app.state.database_path)
+    app.state.openrouter = OpenRouterClient()
+    try:
+        yield
+    finally:
+        app.state.openrouter.close()
+
+
+app = FastAPI(title="Project Management MVP API", lifespan=lifespan)
+app.state.database_path = Path(os.environ.get("DATABASE_PATH", database.DEFAULT_DATABASE_PATH))
 
 
 @app.middleware("http")
@@ -239,7 +245,7 @@ def create_ai_message(payload: AiMessageRequest, request: Request) -> dict:
     history = database.messages_for_user(app.state.database_path, username)[-10:]
     prompt = build_provider_prompt(board, history, payload.content)
     try:
-        model_content = OpenRouterClient().complete(prompt)
+        model_content = request.app.state.openrouter.complete(prompt)
     except OpenRouterError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     try:
@@ -265,7 +271,7 @@ def create_ai_message(payload: AiMessageRequest, request: Request) -> dict:
 def check_ai_connectivity(request: Request) -> dict[str, str]:
     authenticated_username(request)
     try:
-        response = OpenRouterClient().complete("What is 2 + 2? Reply with only the number.")
+        response = request.app.state.openrouter.complete("What is 2 + 2? Reply with only the number.")
     except OpenRouterError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     return {"response": response}

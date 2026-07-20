@@ -23,6 +23,9 @@ class OpenRouterClient:
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
 
+    def close(self) -> None:
+        self.client.close()
+
     def complete(self, prompt: str) -> str:
         if not self.api_key:
             raise OpenRouterError("AI is not configured on this server.")

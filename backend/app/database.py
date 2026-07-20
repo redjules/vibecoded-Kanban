@@ -96,6 +96,27 @@ def _user_id(database: sqlite3.Connection, username: str) -> int:
     return int(user["id"])
 
 
+def _owned_column(database: sqlite3.Connection, user_id: int, column_id: int) -> None:
+    column = database.execute(
+        """SELECT columns.id FROM columns JOIN boards ON boards.id = columns.board_id
+        WHERE columns.id = ? AND boards.user_id = ?""",
+        (column_id, user_id),
+    ).fetchone()
+    if column is None:
+        raise LookupError("Column not found")
+
+
+def _owned_card(database: sqlite3.Connection, user_id: int, card_id: int) -> sqlite3.Row:
+    card = database.execute(
+        """SELECT cards.column_id, cards.position FROM cards JOIN columns ON columns.id = cards.column_id
+        JOIN boards ON boards.id = columns.board_id WHERE cards.id = ? AND boards.user_id = ?""",
+        (card_id, user_id),
+    ).fetchone()
+    if card is None:
+        raise LookupError("Card not found")
+    return card
+
+
 def board_for_user(database_path: Path, username: str) -> dict:
     with connection(database_path) as database:
         user_id = _user_id(database, username)
@@ -130,113 +151,111 @@ def board_for_user(database_path: Path, username: str) -> dict:
         }
 
 
-def rename_column(database_path: Path, username: str, column_id: int, title: str) -> dict:
+# --- Board mutations ---------------------------------------------------------
+# Each helper runs inside an open transaction and raises LookupError (not found)
+# or ValueError (invalid request). They are shared by the REST endpoints and the
+# AI operation applier so ownership checks and ordering rules stay in one place.
+
+
+def _rename_column(database: sqlite3.Connection, user_id: int, column_id: int, title: str) -> None:
+    if database.execute(
+        """UPDATE columns SET title = ? WHERE id = ? AND board_id =
+        (SELECT id FROM boards WHERE user_id = ?)""",
+        (title, column_id, user_id),
+    ).rowcount != 1:
+        raise LookupError("Column not found")
+
+
+def _create_card(database: sqlite3.Connection, user_id: int, column_id: int, title: str, details: str) -> None:
+    _owned_column(database, user_id, column_id)
+    position = database.execute(
+        "SELECT COUNT(*) AS count FROM cards WHERE column_id = ?", (column_id,)
+    ).fetchone()["count"]
+    database.execute(
+        "INSERT INTO cards (column_id, title, details, position) VALUES (?, ?, ?, ?)",
+        (column_id, title, details, position),
+    )
+
+
+def _update_card(database: sqlite3.Connection, user_id: int, card_id: int, title: str, details: str) -> None:
+    if database.execute(
+        """UPDATE cards SET title = ?, details = ? WHERE id = ? AND column_id IN
+        (SELECT columns.id FROM columns JOIN boards ON boards.id = columns.board_id WHERE boards.user_id = ?)""",
+        (title, details, card_id, user_id),
+    ).rowcount != 1:
+        raise LookupError("Card not found")
+
+
+def _delete_card(database: sqlite3.Connection, user_id: int, card_id: int) -> None:
+    card = _owned_card(database, user_id, card_id)
+    database.execute("DELETE FROM cards WHERE id = ?", (card_id,))
+    database.execute(
+        "UPDATE cards SET position = position - 1 WHERE column_id = ? AND position > ?",
+        (card["column_id"], card["position"]),
+    )
+
+
+def _move_card(
+    database: sqlite3.Connection, user_id: int, card_id: int, target_column_id: int, target_position: int
+) -> None:
+    card = _owned_card(database, user_id, card_id)
+    _owned_column(database, user_id, target_column_id)
+    destination_count = database.execute(
+        "SELECT COUNT(*) AS count FROM cards WHERE column_id = ?", (target_column_id,)
+    ).fetchone()["count"]
+    max_position = destination_count - (1 if card["column_id"] == target_column_id else 0)
+    if target_position > max_position:
+        raise ValueError("Target position is outside the column")
+    # UNIQUE(column_id, position) is checked per statement, so shift through an
+    # offset band to avoid transient collisions: park the moved card far away,
+    # close the gap it left, open a gap at the target, then seat the card.
+    database.execute("UPDATE cards SET position = 2_000_000 WHERE id = ?", (card_id,))
+    database.execute(
+        "UPDATE cards SET position = position - 1 WHERE column_id = ? AND position > ?",
+        (card["column_id"], card["position"]),
+    )
+    database.execute(
+        """UPDATE cards SET position = position + 1_000_000
+        WHERE column_id = ? AND position >= ? AND id != ?""",
+        (target_column_id, target_position, card_id),
+    )
+    database.execute(
+        """UPDATE cards SET position = position - 999_999
+        WHERE column_id = ? AND position >= 1_000_000 AND id != ?""",
+        (target_column_id, card_id),
+    )
+    database.execute(
+        "UPDATE cards SET column_id = ?, position = ? WHERE id = ?",
+        (target_column_id, target_position, card_id),
+    )
+
+
+def _mutate(database_path: Path, username: str, apply) -> dict:
     with connection(database_path) as database:
-        user_id = _user_id(database, username)
-        result = database.execute(
-            """UPDATE columns SET title = ? WHERE id = ? AND board_id =
-            (SELECT id FROM boards WHERE user_id = ?)""",
-            (title, column_id, user_id),
-        )
-        if result.rowcount != 1:
-            raise LookupError("Column not found")
+        apply(database, _user_id(database, username))
     return board_for_user(database_path, username)
+
+
+def rename_column(database_path: Path, username: str, column_id: int, title: str) -> dict:
+    return _mutate(database_path, username, lambda db, uid: _rename_column(db, uid, column_id, title))
 
 
 def create_card(database_path: Path, username: str, column_id: int, title: str, details: str) -> dict:
-    with connection(database_path) as database:
-        user_id = _user_id(database, username)
-        column = database.execute(
-            """SELECT columns.id FROM columns JOIN boards ON boards.id = columns.board_id
-            WHERE columns.id = ? AND boards.user_id = ?""",
-            (column_id, user_id),
-        ).fetchone()
-        if column is None:
-            raise LookupError("Column not found")
-        position = database.execute(
-            "SELECT COUNT(*) AS count FROM cards WHERE column_id = ?", (column_id,)
-        ).fetchone()["count"]
-        database.execute(
-            "INSERT INTO cards (column_id, title, details, position) VALUES (?, ?, ?, ?)",
-            (column_id, title, details, position),
-        )
-    return board_for_user(database_path, username)
+    return _mutate(database_path, username, lambda db, uid: _create_card(db, uid, column_id, title, details))
 
 
 def update_card(database_path: Path, username: str, card_id: int, title: str, details: str) -> dict:
-    with connection(database_path) as database:
-        user_id = _user_id(database, username)
-        result = database.execute(
-            """UPDATE cards SET title = ?, details = ? WHERE id = ? AND column_id IN
-            (SELECT columns.id FROM columns JOIN boards ON boards.id = columns.board_id WHERE boards.user_id = ?)""",
-            (title, details, card_id, user_id),
-        )
-        if result.rowcount != 1:
-            raise LookupError("Card not found")
-    return board_for_user(database_path, username)
+    return _mutate(database_path, username, lambda db, uid: _update_card(db, uid, card_id, title, details))
 
 
 def delete_card(database_path: Path, username: str, card_id: int) -> dict:
-    with connection(database_path) as database:
-        user_id = _user_id(database, username)
-        card = database.execute(
-            """SELECT cards.column_id, cards.position FROM cards JOIN columns ON columns.id = cards.column_id
-            JOIN boards ON boards.id = columns.board_id WHERE cards.id = ? AND boards.user_id = ?""",
-            (card_id, user_id),
-        ).fetchone()
-        if card is None:
-            raise LookupError("Card not found")
-        database.execute("DELETE FROM cards WHERE id = ?", (card_id,))
-        database.execute(
-            "UPDATE cards SET position = position - 1 WHERE column_id = ? AND position > ?",
-            (card["column_id"], card["position"]),
-        )
-    return board_for_user(database_path, username)
+    return _mutate(database_path, username, lambda db, uid: _delete_card(db, uid, card_id))
 
 
 def move_card(database_path: Path, username: str, card_id: int, target_column_id: int, target_position: int) -> dict:
-    with connection(database_path) as database:
-        user_id = _user_id(database, username)
-        card = database.execute(
-            """SELECT cards.column_id, cards.position FROM cards JOIN columns ON columns.id = cards.column_id
-            JOIN boards ON boards.id = columns.board_id WHERE cards.id = ? AND boards.user_id = ?""",
-            (card_id, user_id),
-        ).fetchone()
-        target = database.execute(
-            """SELECT columns.id FROM columns JOIN boards ON boards.id = columns.board_id
-            WHERE columns.id = ? AND boards.user_id = ?""",
-            (target_column_id, user_id),
-        ).fetchone()
-        if card is None or target is None or target_position < 0:
-            raise LookupError("Card or target column not found")
-        destination_count = database.execute(
-            "SELECT COUNT(*) AS count FROM cards WHERE column_id = ?", (target_column_id,)
-        ).fetchone()["count"]
-        max_position = destination_count - (1 if card["column_id"] == target_column_id else 0)
-        if target_position > max_position:
-            raise ValueError("Target position is outside the column")
-        database.execute(
-            "UPDATE cards SET position = 2_000_000 WHERE id = ?", (card_id,)
-        )
-        database.execute(
-            "UPDATE cards SET position = position - 1 WHERE column_id = ? AND position > ?",
-            (card["column_id"], card["position"]),
-        )
-        database.execute(
-            """UPDATE cards SET position = position + 1_000_000
-            WHERE column_id = ? AND position >= ? AND id != ?""",
-            (target_column_id, target_position, card_id),
-        )
-        database.execute(
-            """UPDATE cards SET position = position - 999_999
-            WHERE column_id = ? AND position >= 1_000_000 AND id != ?""",
-            (target_column_id, card_id),
-        )
-        database.execute(
-            "UPDATE cards SET column_id = ?, position = ? WHERE id = ?",
-            (target_column_id, target_position, card_id),
-        )
-    return board_for_user(database_path, username)
+    return _mutate(
+        database_path, username, lambda db, uid: _move_card(db, uid, card_id, target_column_id, target_position)
+    )
 
 
 def messages_for_user(database_path: Path, username: str) -> list[dict]:
@@ -249,38 +268,29 @@ def messages_for_user(database_path: Path, username: str) -> list[dict]:
     return [{"id": str(message["id"]), "role": message["role"], "content": message["content"]} for message in messages]
 
 
+def _append_messages(database: sqlite3.Connection, user_id: int, entries: list[tuple[str, str]]) -> None:
+    position = database.execute(
+        "SELECT COUNT(*) AS count FROM conversation_messages WHERE user_id = ?", (user_id,)
+    ).fetchone()["count"]
+    database.executemany(
+        "INSERT INTO conversation_messages (user_id, role, content, position) VALUES (?, ?, ?, ?)",
+        [(user_id, role, content, position + offset) for offset, (role, content) in enumerate(entries)],
+    )
+
+
 def create_message(database_path: Path, username: str, role: str, content: str) -> list[dict]:
     with connection(database_path) as database:
-        user_id = _user_id(database, username)
-        position = database.execute(
-            "SELECT COUNT(*) AS count FROM conversation_messages WHERE user_id = ?", (user_id,)
-        ).fetchone()["count"]
-        database.execute(
-            "INSERT INTO conversation_messages (user_id, role, content, position) VALUES (?, ?, ?, ?)",
-            (user_id, role, content, position),
-        )
+        _append_messages(database, _user_id(database, username), [(role, content)])
     return messages_for_user(database_path, username)
 
 
-def _owned_column(database: sqlite3.Connection, user_id: int, column_id: int) -> None:
-    column = database.execute(
-        """SELECT columns.id FROM columns JOIN boards ON boards.id = columns.board_id
-        WHERE columns.id = ? AND boards.user_id = ?""",
-        (column_id, user_id),
-    ).fetchone()
-    if column is None:
-        raise LookupError("Column not found")
-
-
-def _owned_card(database: sqlite3.Connection, user_id: int, card_id: int) -> sqlite3.Row:
-    card = database.execute(
-        """SELECT cards.column_id, cards.position FROM cards JOIN columns ON columns.id = cards.column_id
-        JOIN boards ON boards.id = columns.board_id WHERE cards.id = ? AND boards.user_id = ?""",
-        (card_id, user_id),
-    ).fetchone()
-    if card is None:
-        raise LookupError("Card not found")
-    return card
+_APPLY_OPERATION = {
+    "rename_column": lambda db, uid, op: _rename_column(db, uid, op.column_id, op.title),
+    "create_card": lambda db, uid, op: _create_card(db, uid, op.column_id, op.title, op.details),
+    "edit_card": lambda db, uid, op: _update_card(db, uid, op.card_id, op.title, op.details),
+    "delete_card": lambda db, uid, op: _delete_card(db, uid, op.card_id),
+    "move_card": lambda db, uid, op: _move_card(db, uid, op.card_id, op.column_id, op.position),
+}
 
 
 def apply_ai_result(
@@ -293,69 +303,8 @@ def apply_ai_result(
     with connection(database_path) as database:
         user_id = _user_id(database, username)
         for operation in operations:
-            if operation.type == "rename_column":
-                _owned_column(database, user_id, operation.column_id)
-                database.execute(
-                    "UPDATE columns SET title = ? WHERE id = ?", (operation.title, operation.column_id)
-                )
-            elif operation.type == "create_card":
-                _owned_column(database, user_id, operation.column_id)
-                position = database.execute(
-                    "SELECT COUNT(*) AS count FROM cards WHERE column_id = ?", (operation.column_id,)
-                ).fetchone()["count"]
-                database.execute(
-                    "INSERT INTO cards (column_id, title, details, position) VALUES (?, ?, ?, ?)",
-                    (operation.column_id, operation.title, operation.details, position),
-                )
-            elif operation.type == "edit_card":
-                _owned_card(database, user_id, operation.card_id)
-                database.execute(
-                    "UPDATE cards SET title = ?, details = ? WHERE id = ?",
-                    (operation.title, operation.details, operation.card_id),
-                )
-            elif operation.type == "delete_card":
-                card = _owned_card(database, user_id, operation.card_id)
-                database.execute("DELETE FROM cards WHERE id = ?", (operation.card_id,))
-                database.execute(
-                    "UPDATE cards SET position = position - 1 WHERE column_id = ? AND position > ?",
-                    (card["column_id"], card["position"]),
-                )
-            elif operation.type == "move_card":
-                card = _owned_card(database, user_id, operation.card_id)
-                _owned_column(database, user_id, operation.column_id)
-                count = database.execute(
-                    "SELECT COUNT(*) AS count FROM cards WHERE column_id = ?", (operation.column_id,)
-                ).fetchone()["count"]
-                maximum = count - (1 if card["column_id"] == operation.column_id else 0)
-                if operation.position > maximum:
-                    raise ValueError("Target position is outside the column")
-                database.execute("UPDATE cards SET position = 2_000_000 WHERE id = ?", (operation.card_id,))
-                database.execute(
-                    "UPDATE cards SET position = position - 1 WHERE column_id = ? AND position > ?",
-                    (card["column_id"], card["position"]),
-                )
-                database.execute(
-                    """UPDATE cards SET position = position + 1_000_000
-                    WHERE column_id = ? AND position >= ? AND id != ?""",
-                    (operation.column_id, operation.position, operation.card_id),
-                )
-                database.execute(
-                    """UPDATE cards SET position = position - 999_999
-                    WHERE column_id = ? AND position >= 1_000_000 AND id != ?""",
-                    (operation.column_id, operation.card_id),
-                )
-                database.execute(
-                    "UPDATE cards SET column_id = ?, position = ? WHERE id = ?",
-                    (operation.column_id, operation.position, operation.card_id),
-                )
-        message_position = database.execute(
-            "SELECT COUNT(*) AS count FROM conversation_messages WHERE user_id = ?", (user_id,)
-        ).fetchone()["count"]
-        database.executemany(
-            "INSERT INTO conversation_messages (user_id, role, content, position) VALUES (?, ?, ?, ?)",
-            [
-                (user_id, "user", user_message, message_position),
-                (user_id, "assistant", assistant_reply, message_position + 1),
-            ],
+            _APPLY_OPERATION[operation.type](database, user_id, operation)
+        _append_messages(
+            database, user_id, [("user", user_message), ("assistant", assistant_reply)]
         )
     return messages_for_user(database_path, username), board_for_user(database_path, username)

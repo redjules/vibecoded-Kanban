@@ -172,3 +172,4 @@
 - AI conversation history persists in SQLite and remains available after page reloads and browser restarts.
 - Cards have `title` and `details` only for the MVP. The data model should remain easy to extend with status, priority, timestamps, and tags.
 - Start and stop scripts use `docker compose` as the common developer interface.
+
