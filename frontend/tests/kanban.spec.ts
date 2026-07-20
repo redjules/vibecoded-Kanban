@@ -65,9 +65,14 @@ test.describe("authenticated board", () => {
   });
 
   test("moves a card between columns", async ({ page }) => {
+    // Give every column room on screen: widen the window and close the panel.
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await page.getByRole("button", { name: "Assistant", exact: true }).click();
     const sourceColumn = page.locator('[data-testid^="column-"]').first();
     const card = sourceColumn.locator('[data-testid^="card-"]').first();
     const targetColumn = page.locator('[data-testid^="column-"]').nth(3);
+    // The board track scrolls horizontally, so the target may start off-screen.
+    await targetColumn.scrollIntoViewIfNeeded();
     const cardId = await card.getAttribute("data-testid");
     const cardBox = await card.boundingBox();
     const columnBox = await targetColumn.boundingBox();

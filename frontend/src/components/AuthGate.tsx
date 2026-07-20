@@ -73,7 +73,7 @@ export const AuthGate = () => {
 
   return (
     <main className="grid min-h-screen place-items-center bg-[var(--surface)] px-6 py-12">
-      <section className="w-full max-w-md border border-[var(--stroke)] bg-white p-8 shadow-[var(--shadow)]">
+      <section className="w-full max-w-md rounded-2xl border border-[var(--stroke)] bg-white p-8 shadow-[var(--shadow)]">
         <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--primary-blue)]">
           Project management
         </p>
@@ -84,7 +84,7 @@ export const AuthGate = () => {
           <label className="grid gap-2 text-sm font-semibold text-[var(--navy-dark)]">
             Username
             <input
-              className="border border-[var(--stroke)] px-3 py-2 text-base font-normal outline-none focus:border-[var(--primary-blue)]"
+              className="rounded-lg border border-[var(--stroke-strong)] px-3 py-2 text-base font-normal outline-none transition focus:border-[var(--primary-blue)]"
               name="username"
               autoComplete="username"
               value={username}
@@ -95,7 +95,7 @@ export const AuthGate = () => {
           <label className="grid gap-2 text-sm font-semibold text-[var(--navy-dark)]">
             Password
             <input
-              className="border border-[var(--stroke)] px-3 py-2 text-base font-normal outline-none focus:border-[var(--primary-blue)]"
+              className="rounded-lg border border-[var(--stroke-strong)] px-3 py-2 text-base font-normal outline-none transition focus:border-[var(--primary-blue)]"
               name="password"
               type="password"
               autoComplete="current-password"
@@ -110,7 +110,7 @@ export const AuthGate = () => {
             </p>
           ) : null}
           <button
-            className="bg-[var(--secondary-purple)] px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+            className="rounded-lg bg-[var(--secondary-purple)] px-4 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-60"
             type="submit"
             disabled={isSubmitting}
           >

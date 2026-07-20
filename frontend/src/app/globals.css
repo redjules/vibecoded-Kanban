@@ -9,7 +9,9 @@
   --surface: #f7f8fb;
   --surface-strong: #ffffff;
   --stroke: rgba(3, 33, 71, 0.08);
+  --stroke-strong: rgba(3, 33, 71, 0.16);
   --shadow: 0 18px 40px rgba(3, 33, 71, 0.12);
+  --shadow-soft: 0 1px 2px rgba(3, 33, 71, 0.06), 0 8px 20px rgba(3, 33, 71, 0.06);
 }
 
 @theme inline {
@@ -22,6 +24,11 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   background: var(--surface);
   color: var(--navy-dark);
@@ -31,4 +38,26 @@ body {
 
 .font-display {
   font-family: var(--font-display), "Segoe UI", sans-serif;
+}
+
+/* Slim scrollbars so column and panel scrolling stays visually quiet. */
+.scroll-slim {
+  scrollbar-width: thin;
+  scrollbar-color: var(--stroke-strong) transparent;
+}
+
+.scroll-slim::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.scroll-slim::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-slim::-webkit-scrollbar-thumb {
+  background-clip: content-box;
+  background-color: var(--stroke-strong);
+  border: 3px solid transparent;
+  border-radius: 999px;
 }

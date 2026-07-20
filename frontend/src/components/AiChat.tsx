@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import type { BoardData } from "@/lib/kanban";
+import { CloseIcon, SendIcon, SparkIcon } from "@/components/icons";
 
 type ConversationMessage = {
   id: string;
@@ -21,9 +22,10 @@ type ApiErrorResponse = {
 
 type AiChatProps = {
   onBoardUpdate: (board: BoardData) => void;
+  onClose?: () => void;
 };
 
-export const AiChat = ({ onBoardUpdate }: AiChatProps) => {
+export const AiChat = ({ onBoardUpdate, onClose }: AiChatProps) => {
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [content, setContent] = useState("");
   const [error, setError] = useState("");
@@ -96,20 +98,31 @@ export const AiChat = ({ onBoardUpdate }: AiChatProps) => {
 
   return (
     <aside
-      className="flex min-h-[540px] flex-col border border-[var(--stroke)] bg-white/90 shadow-[var(--shadow)] backdrop-blur lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)]"
+      className="fixed inset-y-0 right-0 z-30 flex w-[min(100%,360px)] flex-col border-l border-[var(--stroke)] bg-[var(--surface-strong)] shadow-[var(--shadow)] md:static md:z-auto md:w-[340px] md:shrink-0 md:shadow-none lg:w-[380px]"
       aria-label="AI project assistant"
     >
-      <header className="border-b border-[var(--stroke)] px-5 py-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--primary-blue)]">
+      <header className="flex shrink-0 items-center gap-2 border-b border-[var(--stroke)] px-4 py-3">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--secondary-purple)]/10 text-[var(--secondary-purple)]">
+          <SparkIcon className="h-4 w-4" />
+        </span>
+        <h2 className="min-w-0 flex-1 truncate font-display text-sm font-semibold text-[var(--navy-dark)]">
           Project assistant
-        </p>
-        <h2 className="mt-2 font-display text-2xl font-semibold text-[var(--navy-dark)]">
-          Board chat
         </h2>
+        {onClose ? (
+          <button
+            aria-label="Close assistant"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--gray-text)] transition hover:bg-[var(--surface)] hover:text-[var(--navy-dark)]"
+            onClick={onClose}
+            title="Close assistant"
+            type="button"
+          >
+            <CloseIcon className="h-4 w-4" />
+          </button>
+        ) : null}
       </header>
 
       <div
-        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-5"
+        className="scroll-slim flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4"
         aria-live="polite"
       >
         {isLoading ? (
@@ -127,14 +140,14 @@ export const AiChat = ({ onBoardUpdate }: AiChatProps) => {
             key={message.id}
             className={
               message.role === "assistant"
-                ? "border-l-2 border-[var(--accent-yellow)] bg-[var(--surface)] px-4 py-3"
-                : "ml-6 border-l-2 border-[var(--primary-blue)] px-4 py-3"
+                ? "mr-4 rounded-xl rounded-tl-sm bg-[var(--surface)] px-3 py-2"
+                : "ml-4 rounded-xl rounded-tr-sm bg-[var(--primary-blue)]/10 px-3 py-2"
             }
           >
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--gray-text)]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--gray-text)]">
               {message.role === "assistant" ? "Assistant" : "You"}
             </p>
-            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[var(--navy-dark)]">
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[var(--navy-dark)]">
               {message.content}
             </p>
           </article>
@@ -142,14 +155,14 @@ export const AiChat = ({ onBoardUpdate }: AiChatProps) => {
       </div>
 
       <form
-        className="border-t border-[var(--stroke)] p-5"
+        className="shrink-0 border-t border-[var(--stroke)] p-4"
         onSubmit={handleSubmit}
       >
         <label className="sr-only" htmlFor="ai-message">
           Message the project assistant
         </label>
         <textarea
-          className="min-h-24 w-full resize-y border border-[var(--stroke)] bg-white px-3 py-2 text-sm leading-6 text-[var(--navy-dark)] outline-none focus:border-[var(--primary-blue)]"
+          className="min-h-20 w-full resize-y rounded-lg border border-[var(--stroke-strong)] bg-white px-3 py-2 text-sm leading-6 text-[var(--navy-dark)] outline-none transition focus:border-[var(--primary-blue)]"
           id="ai-message"
           value={content}
           onChange={(event) => setContent(event.target.value)}
@@ -174,10 +187,11 @@ export const AiChat = ({ onBoardUpdate }: AiChatProps) => {
           </div>
         ) : null}
         <button
-          className="mt-4 w-full bg-[var(--secondary-purple)] px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--secondary-purple)] px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
           type="submit"
           disabled={isSending || !content.trim()}
         >
+          <SendIcon className="h-4 w-4" />
           {isSending ? "Sending..." : "Send message"}
         </button>
       </form>
